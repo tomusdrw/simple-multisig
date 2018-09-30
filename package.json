@@ -24,9 +24,10 @@
   },
   "homepage": "https://github.com/christianlundkvist/simple-multisig#readme",
   "devDependencies": {
-    "eth-lightwallet": "*",
     "bluebird": "*",
+    "eth-lightwallet": "*",
     "left-pad": "*",
-    "solidity-sha3": "*"
+    "solidity-sha3": "*",
+    "truffle": "^4.1.14"
   }
 }
