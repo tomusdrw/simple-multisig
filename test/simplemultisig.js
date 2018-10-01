@@ -41,7 +41,7 @@ contract('SimpleMultiSig', function(accounts) {
     return contract
   }
 
-  let executeSendSuccess = async function(multisigPromise, signers, done) {
+  let executeSendSuccess = async function(multisigPromise, signers, done, expectedNonce = 0) {
 
     let multisig = await multisigPromise
 
@@ -51,7 +51,7 @@ contract('SimpleMultiSig', function(accounts) {
     await web3SendTransaction({from: accounts[0], to: multisig.address, value: web3.toWei(new BigNumber(0.1), 'ether')})
 
     let nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 0)
+    assert.equal(nonce.toNumber(), expectedNonce)
 
     let bal = await web3GetBalance(multisig.address)
     assert.equal(bal, web3.toWei(0.1, 'ether'))
@@ -74,7 +74,7 @@ contract('SimpleMultiSig', function(accounts) {
 
     // Check nonce updated
     nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 1)
+    assert.equal(nonce.toNumber(), expectedNonce + 1)
 
     // Send again
     sigs = createSigs(signers, multisig.address, nonce, randomAddr, value, '0x')
@@ -86,7 +86,7 @@ contract('SimpleMultiSig', function(accounts) {
 
     // Check nonce updated
     nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 2)
+    assert.equal(nonce.toNumber(), expectedNonce + 2)
 
     // Test contract interactions
     let reg = await TestRegistry.new({from: accounts[0]})
@@ -107,17 +107,17 @@ contract('SimpleMultiSig', function(accounts) {
 
     // Check nonce updated
     nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 3)
+    assert.equal(nonce.toNumber(), expectedNonce + 3)
 
     done()
   }
 
-  let executeSendFailure = async function(multisigPromise, signers, done) {
+  let executeSendFailure = async function(multisigPromise, signers, done, expectedNonce = 0) {
 
     let multisig = await multisigPromise
 
     let nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 0)
+    assert.equal(nonce.toNumber(), expectedNonce)
 
     // Receive funds
     await web3SendTransaction({from: accounts[0], to: multisig.address, value: web3.toWei(new BigNumber(2), 'ether')})
@@ -126,15 +126,12 @@ contract('SimpleMultiSig', function(accounts) {
     let value = web3.toWei(new BigNumber(0.1), 'ether')
     let sigs = createSigs(signers, multisig.address, nonce, randomAddr, value, '0x')
 
-    let errMsg = ''
     try {
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, randomAddr, value, '0x', {from: accounts[0], gasLimit: 1000000})
-    }
-    catch(error) {
-      errMsg = error.message
+      await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, randomAddr, value, '0x', {from: accounts[0], gasLimit: 1000000})
+    } catch(error) {
+      assertReverted(error)
     }
 
-    assert.equal(errMsg, 'VM Exception while processing transaction: revert', 'Test did not throw')
 
     done()
   }
@@ -143,14 +140,15 @@ contract('SimpleMultiSig', function(accounts) {
 
     try {
       await multisig(owners, threshold)
+    } catch(error) {
+      assertReverted(error)
     }
-    catch(error) {
-      errMsg = error.message
-    }
-
-    assert.equal(errMsg, 'VM Exception while processing transaction: revert', 'Test did not throw')
 
     done()
+  }
+
+  let assertReverted = (error) => {
+      assert.equal(error.message, 'VM Exception while processing transaction: revert', 'Test did not throw')
   }
   
   before((done) => {
@@ -239,6 +237,72 @@ contract('SimpleMultiSig', function(accounts) {
 
     it("should fail with 11 owners", (done) => {
       creationFailure(acct.slice(0,11), 2, done)
+    })
+  })
+
+  describe("Set owners", () => {
+    it("should not allow calling method from any account", async () => {
+      const contract = await multisig(acct.slice(0, 3), 2)
+      try {
+        await contract.setOwners(1, acct.slice(0, 1), {
+          from: accounts[0],
+          gasLimit: 1000000
+        })
+      } catch (error) {
+        assertReverted(error)
+      }
+    })
+
+    it("should change owners and fail to send with previous owners", async () => {
+      const contract = await multisig(acct.slice(0, 3), 2)
+      let data = lightwallet.txutils._encodeFunctionTxData(
+        'setOwners',
+        ['uint256', 'address[]'],
+        [1, acct.slice(6, 9)]
+      )
+      let sigs = createSigs(
+        acct.slice(1, 3),
+        contract.address,
+        0,
+        contract.address,
+        0,
+        data
+      )
+      await contract.execute(sigs.sigV, sigs.sigR, sigs.sigS, contract.address, 0, data, {
+        from: accounts[9],
+        gasLimit: 1000000
+      })
+
+      return new Promise((resolve) => {
+        executeSendFailure(Promise.resolve(contract), acct.slice(0, 3), resolve, 1)
+      })
+    })
+
+    it("should change owners and succesfuly send transaction", async () => {
+      const contract = await multisig(acct.slice(0, 3), 2)
+      let data = lightwallet.txutils._encodeFunctionTxData(
+        'setOwners',
+        ['uint256', 'address[]'],
+        [1, acct.slice(6, 9)]
+      )
+      let sigs = createSigs(
+        acct.slice(1, 3),
+        contract.address,
+        0,
+        contract.address,
+        0,
+        data
+      )
+      await contract.execute(sigs.sigV, sigs.sigR, sigs.sigS, contract.address, 0, data, {
+        from: accounts[9],
+        gasLimit: 1000000
+      })
+
+      return new Promise((resolve) => {
+        // update contract owners
+        contract.owners = acct.slice(6, 9)
+        executeSendSuccess(Promise.resolve(contract), acct.slice(6, 7), resolve, 1)
+      })
     })
   })
 })

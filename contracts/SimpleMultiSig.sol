@@ -2,13 +2,17 @@ pragma solidity ^0.4.22;
 
 contract SimpleMultiSig {
 
-  uint public nonce;                 // (only) mutable state
-  uint public threshold;             // immutable state
-  mapping (address => bool) isOwner; // immutable state
-  address[] public ownersArr;        // immutable state
+  uint public nonce;                
+  uint public threshold;            
+  mapping (address => bool) isOwner;
+  address[] public ownersArr;      
+
+  constructor(uint threshold_, address[] owners_) public {
+    initialize(threshold_, owners_);
+  }
 
   // Note that owners_ must be strictly increasing, in order to prevent duplicates
-  constructor(uint threshold_, address[] owners_) public {
+  function initialize(uint threshold_, address[] owners_) private {
     require(owners_.length <= 10 && threshold_ <= owners_.length && threshold_ >= 0);
 
     address lastAdd = address(0); 
@@ -19,6 +23,17 @@ contract SimpleMultiSig {
     }
     ownersArr = owners_;
     threshold = threshold_;
+  }
+
+  function setOwners(uint threshold_, address[] owners_) public {
+    // only callable from `execute`
+    require(msg.sender == address(this));
+    // clear previous owners
+    for (uint i = 0; i < ownersArr.length; i++) {
+      isOwner[ownersArr[i]] = false;
+    }
+    // re-initialize
+    initialize(threshold_, owners_);
   }
 
   // Note that address recovered from signatures must be strictly increasing, in order to prevent duplicates
