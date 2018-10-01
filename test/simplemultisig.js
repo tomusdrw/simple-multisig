@@ -35,9 +35,15 @@ contract('SimpleMultiSig', function(accounts) {
 
   }
 
-  let executeSendSuccess = async function(owners, threshold, signers, done) {
+  let multisig = async function(owners, threshold) {
+    const contract = await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
+    contract.owners = owners;
+    return contract
+  }
 
-    let multisig = await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
+  let executeSendSuccess = async function(multisigPromise, signers, done) {
+
+    let multisig = await multisigPromise
 
     let randomAddr = solsha3(Math.random()).slice(0,42)
 
@@ -51,9 +57,9 @@ contract('SimpleMultiSig', function(accounts) {
     assert.equal(bal, web3.toWei(0.1, 'ether'))
 
     // check that owners are stored correctly
-    for (var i=0; i<owners.length; i++) {
+    for (var i=0; i<multisig.owners.length; i++) {
       let ownerFromContract = await multisig.ownersArr.call(i)
-      assert.equal(owners[i], ownerFromContract)
+      assert.equal(multisig.owners[i], ownerFromContract)
     }
 
     let value = web3.toWei(new BigNumber(0.01), 'ether')
@@ -106,9 +112,9 @@ contract('SimpleMultiSig', function(accounts) {
     done()
   }
 
-  let executeSendFailure = async function(owners, threshold, signers, done) {
+  let executeSendFailure = async function(multisigPromise, signers, done) {
 
-    let multisig = await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
+    let multisig = await multisigPromise
 
     let nonce = await multisig.nonce.call()
     assert.equal(nonce.toNumber(), 0)
@@ -136,7 +142,7 @@ contract('SimpleMultiSig', function(accounts) {
   let creationFailure = async function(owners, threshold, done) {
 
     try {
-      await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
+      await multisig(owners, threshold)
     }
     catch(error) {
       errMsg = error.message
@@ -177,50 +183,50 @@ contract('SimpleMultiSig', function(accounts) {
     it("should succeed with signers 0, 1", (done) => {
       let signers = [acct[0], acct[1]]
       signers.sort()
-      executeSendSuccess(acct.slice(0,3), 2, signers, done)
+      executeSendSuccess(multisig(acct.slice(0,3), 2), signers, done)
     })
 
     it("should succeed with signers 0, 2", (done) => {
       let signers = [acct[0], acct[2]]
       signers.sort()
-      executeSendSuccess(acct.slice(0,3), 2, signers, done)
+      executeSendSuccess(multisig(acct.slice(0,3), 2), signers, done)
     })
 
     it("should succeed with signers 1, 2", (done) => {
       let signers = [acct[1], acct[2]]
       signers.sort()
-      executeSendSuccess(acct.slice(0,3), 2, signers, done)
+      executeSendSuccess(multisig(acct.slice(0,3), 2), signers, done)
     })
 
     it("should fail due to non-owner signer", (done) => {
       let signers = [acct[0], acct[3]]
       signers.sort()
-      executeSendFailure(acct.slice(0,3), 2, signers, done)
+      executeSendFailure(multisig(acct.slice(0,3), 2), signers, done)
     })
 
     it("should fail with more signers than threshold", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, acct.slice(0,3), done)
+      executeSendFailure(multisig(acct.slice(0,3), 2), acct.slice(0,3), done)
     })
 
     it("should fail with fewer signers than threshold", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, [acct[0]], done)
+      executeSendFailure(multisig(acct.slice(0,3), 2), [acct[0]], done)
     })
 
     it("should fail with one signer signing twice", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, [acct[0], acct[0]], done)
+      executeSendFailure(multisig(acct.slice(0,3), 2), [acct[0], acct[0]], done)
     })
 
     it("should fail with signers in wrong order", (done) => {
       let signers = [acct[0], acct[1]]
       signers.sort().reverse() //opposite order it should be
-      executeSendFailure(acct.slice(0,3), 2, signers, done)
+      executeSendFailure(multisig(acct.slice(0,3), 2), signers, done)
     })
 
   })  
 
   describe("Edge cases", () => {
     it("should succeed with 10 owners, 10 signers", (done) => {
-      executeSendSuccess(acct.slice(0,10), 10, acct.slice(0,10), done)
+      executeSendSuccess(multisig(acct.slice(0,10), 10), acct.slice(0,10), done)
     })
 
     it("should fail to create with signers 0, 0, 2, and threshold 3", (done) => { 
@@ -228,12 +234,11 @@ contract('SimpleMultiSig', function(accounts) {
     })
 
     it("should fail with 0 signers", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, [], done)
+      executeSendFailure(multisig(acct.slice(0,3), 2), [], done)
     })
 
     it("should fail with 11 owners", (done) => {
       creationFailure(acct.slice(0,11), 2, done)
     })
   })
-
 })
